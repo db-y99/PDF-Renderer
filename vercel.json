@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run install-browsers && npm run build",
+  "buildCommand": "npm run build",
   "installCommand": "npm install"
 }
 

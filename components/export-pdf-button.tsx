@@ -32,28 +32,28 @@ export function ExportPdfButton({ contentOnly = false, data }: ExportPdfButtonPr
     setIsLoading(true);
     try {
       // Chọn API endpoint dựa trên contentOnly
-      let apiEndpoint = contentOnly ? '/api/pdf/content' : '/api/pdf';
+      const apiEndpoint = contentOnly ? '/api/pdf/content' : '/api/pdf';
 
-      // Nếu export chỉ nội dung, truyền data qua query params
-      if (contentOnly && data) {
-        const formatDate = (date: CalendarDate | null) => {
-          if (!date) return '';
-          return `Ngày ${date.day} tháng ${date.month} năm ${date.year}`;
-        };
+      // Format data để gửi
+      const formatDate = (date: CalendarDate | null) => {
+        if (!date) return '';
+        return `Ngày ${date.day} tháng ${date.month} năm ${date.year}`;
+      };
 
-        const dataToSave = {
-          ...data,
-          date: formatDate(data.date),
-          isSettlement: data.isSettlement !== undefined ? data.isSettlement : true
-        };
+      const dataToSend = {
+        ...data,
+        date: formatDate(data?.date || null),
+        isSettlement: data?.isSettlement !== undefined ? data.isSettlement : true
+      };
 
-        // Encode data để truyền qua query params
-        const encodedData = encodeURIComponent(JSON.stringify(dataToSave));
-        apiEndpoint = `${apiEndpoint}?data=${encodedData}`;
-      }
-
-      // Gọi API để xuất PDF
-      const response = await fetch(apiEndpoint);
+      // Gọi API để xuất PDF - sử dụng POST với JSON body (tiện lợi hơn query params)
+      const response = await fetch(apiEndpoint, {
+        method: contentOnly ? 'POST' : 'GET', // POST cho content, GET cho full page
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: contentOnly ? JSON.stringify(dataToSend) : undefined,
+      });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));

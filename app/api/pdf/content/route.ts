@@ -1,8 +1,48 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { launchChromium, isBrowserInstallationError } from '@/utils/playwright-config';
 
+// Helper function to get receipt data from request
+async function getReceiptData(request: NextRequest): Promise<string | null> {
+  // Try to get from POST body first (preferred method)
+  if (request.method === 'POST') {
+    try {
+      const body = await request.json();
+      if (body && typeof body === 'object') {
+        return JSON.stringify(body);
+      }
+    } catch (error) {
+      // If body parsing fails, fall back to query params
+      console.warn('Failed to parse POST body, falling back to query params:', error);
+    }
+  }
+
+  // Fall back to query params for GET requests or if POST body parsing fails
+  const searchParams = request.nextUrl.searchParams;
+  return searchParams.get('data');
+}
+
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    },
+  });
+}
+
 export async function GET(request: NextRequest) {
+  return handleRequest(request);
+}
+
+export async function POST(request: NextRequest) {
+  return handleRequest(request);
+}
+
+async function handleRequest(request: NextRequest) {
   let browser;
+  let page;
   try {
     // Use request URL to construct proper base URL for production
     const url = new URL(request.url);
@@ -11,12 +51,10 @@ export async function GET(request: NextRequest) {
 
     // Khởi tạo trình duyệt với options tối ưu cho production
     browser = await launchChromium();
+    page = await browser.newPage();
 
-    const page = await browser.newPage();
-
-    // Lấy dữ liệu từ query params
-    const searchParams = request.nextUrl.searchParams;
-    const receiptData = searchParams.get('data');
+    // Lấy dữ liệu từ request (POST body hoặc query params)
+    const receiptData = await getReceiptData(request);
 
     // Navigate đến trang trước
     await page.goto(targetUrl, {
@@ -24,13 +62,32 @@ export async function GET(request: NextRequest) {
       timeout: 45000,
     });
 
-    // Nếu có data từ query params, set vào localStorage sau khi page đã load
+    // Nếu có data, set vào localStorage sau khi page đã load
     if (receiptData) {
       try {
-        const decodedData = decodeURIComponent(receiptData);
+        // Xử lý data: nếu từ query params thì cần decode, nếu từ POST body thì đã là JSON string
+        let dataToStore = receiptData;
+        
+        // Thử parse JSON để kiểm tra xem có phải là JSON string hợp lệ không
+        try {
+          JSON.parse(receiptData);
+          // Nếu parse được, có nghĩa là đã là JSON string (từ POST body)
+          dataToStore = receiptData;
+        } catch {
+          // Nếu parse không được, có thể là từ query params (đã được encode)
+          try {
+            dataToStore = decodeURIComponent(receiptData);
+            // Kiểm tra lại xem sau khi decode có phải là JSON hợp lệ không
+            JSON.parse(dataToStore);
+          } catch {
+            // Nếu vẫn không được, giữ nguyên
+            dataToStore = receiptData;
+          }
+        }
+        
         await page.evaluate((data) => {
           localStorage.setItem('receiptData', data);
-        }, decodedData);
+        }, dataToStore);
         
         // Reload page để React đọc lại localStorage
         await page.reload({
@@ -42,6 +99,7 @@ export async function GET(request: NextRequest) {
         await page.waitForTimeout(500);
       } catch (error) {
         console.warn('Failed to set receipt data:', error);
+        // Continue even if setting data fails
       }
     }
 
@@ -114,13 +172,28 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    if (browser) {
-      await browser.close().catch(() => {});
+    // Clean up resources
+    try {
+      if (page) {
+        await page.close().catch(() => {});
+      }
+    } catch (pageError) {
+      // Ignore cleanup errors
     }
+    
+    try {
+      if (browser) {
+        await browser.close().catch(() => {});
+      }
+    } catch (browserError) {
+      // Ignore cleanup errors
+    }
+    
     console.error('Error generating PDF:', error);
     
     // Check if it's a browser installation error
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
     if (isBrowserInstallationError(error)) {
       return NextResponse.json(
         { 
