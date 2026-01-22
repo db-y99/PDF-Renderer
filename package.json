@@ -6,7 +6,9 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint --fix"
+    "lint": "eslint --fix",
+    "postinstall": "playwright install chromium --with-deps || true",
+    "install-browsers": "playwright install chromium --with-deps"
   },
   "dependencies": {
     "@heroui/accordion": "2.2.26",

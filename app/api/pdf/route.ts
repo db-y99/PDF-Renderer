@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { chromium } from 'playwright';
+import { launchChromium, isBrowserInstallationError } from '@/utils/playwright-config';
 
 export async function GET(request: NextRequest) {
   let browser;
@@ -10,27 +10,7 @@ export async function GET(request: NextRequest) {
     const targetUrl = `${baseUrl}/pdf`;
 
     // Khởi tạo trình duyệt với options tối ưu cho production
-    browser = await chromium.launch({
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--disable-software-rasterizer',
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding',
-        '--disable-features=TranslateUI',
-        '--disable-ipc-flooding-protection',
-        '--disable-extensions',
-        '--disable-plugins',
-        '--disable-web-security', // Cho phép cross-origin trong production
-        '--allow-running-insecure-content',
-        '--memory-pressure-off', // Giảm memory usage
-        '--max_old_space_size=4096' // Tăng memory limit
-      ],
-    });
+    browser = await launchChromium();
 
     const page = await browser.newPage();
 
@@ -98,8 +78,22 @@ export async function GET(request: NextRequest) {
       await browser.close().catch(() => {});
     }
     console.error('Error generating PDF:', error);
+    
+    // Check if it's a browser installation error
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    if (isBrowserInstallationError(error)) {
+      return NextResponse.json(
+        { 
+          error: 'Playwright browsers not installed',
+          details: 'Please ensure Playwright browsers are installed. Run: npx playwright install chromium',
+          message: errorMessage
+        },
+        { status: 500 }
+      );
+    }
+    
     return NextResponse.json(
-      { error: 'Failed to generate PDF', details: error instanceof Error ? error.message : 'Unknown error' },
+      { error: 'Failed to generate PDF', details: errorMessage },
       { status: 500 }
     );
   }
