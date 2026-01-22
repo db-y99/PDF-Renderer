@@ -4,13 +4,32 @@ import { chromium } from 'playwright';
 export async function GET(request: NextRequest) {
   let browser;
   try {
-    const origin = request.headers.get('origin') || 'http://localhost:3000';
-    const targetUrl = `${origin}/pdf/content`;
+    // Use request URL to construct proper base URL for production
+    const url = new URL(request.url);
+    const baseUrl = `${url.protocol}//${url.host}`;
+    const targetUrl = `${baseUrl}/pdf/content`;
 
-    // Khởi tạo trình duyệt với options tối ưu
+    // Khởi tạo trình duyệt với options tối ưu cho production
     browser = await chromium.launch({
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-software-rasterizer',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-features=TranslateUI',
+        '--disable-ipc-flooding-protection',
+        '--disable-extensions',
+        '--disable-plugins',
+        '--disable-web-security', // Cho phép cross-origin trong production
+        '--allow-running-insecure-content',
+        '--memory-pressure-off', // Giảm memory usage
+        '--max_old_space_size=4096' // Tăng memory limit
+      ],
     });
 
     const page = await browser.newPage();
@@ -21,8 +40,8 @@ export async function GET(request: NextRequest) {
 
     // Navigate đến trang trước
     await page.goto(targetUrl, {
-      waitUntil: 'domcontentloaded',
-      timeout: 20000,
+      waitUntil: 'networkidle',
+      timeout: 45000,
     });
 
     // Nếu có data từ query params, set vào localStorage sau khi page đã load
@@ -36,7 +55,7 @@ export async function GET(request: NextRequest) {
         // Reload page để React đọc lại localStorage
         await page.reload({
           waitUntil: 'networkidle',
-          timeout: 20000,
+          timeout: 45000,
         });
         
         // Đợi React render xong - đợi một element trong ReceiptContent xuất hiện
@@ -49,7 +68,7 @@ export async function GET(request: NextRequest) {
     // Đợi QR code load xong - phần quan trọng nhất
     try {
       await page.waitForSelector('img[alt="Mã QR chuyển khoản"]', {
-        timeout: 15000,
+        timeout: 30000,
       });
 
       // Đợi image QR code load hoàn toàn
@@ -104,11 +123,14 @@ export async function GET(request: NextRequest) {
 
     await browser.close();
 
-    // Trả về file PDF
+    // Trả về file PDF với CORS headers
     return new NextResponse(new Uint8Array(pdf), {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': 'attachment; filename="phieu-thu-tien-tat-toan.pdf"',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
       },
     });
   } catch (error) {
